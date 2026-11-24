@@ -1,0 +1,24 @@
+# Hiroba Upload Security Configuration
+# Disables PHP script execution in the upload directory to prevent arbitrary code execution
+
+# Disable script engines
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+
+<IfModule mod_php8.c>
+  php_flag engine off
+</IfModule>
+
+# Prevent script execution and directory browsing
+Options -Indexes -ExecCGI
+
+# Deny direct execution of scripts
+<FilesMatch "(?i)\.(php|phtml|php3|php4|php5|php7|php8|phps|pl|py|cgi|sh|exe|asp|aspx)$">
+  Order Deny,Allow
+  Deny from all
+</FilesMatch>

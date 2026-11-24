@@ -1,0 +1,15 @@
+# Environment files containing sensitive credentials
+.env
+.env.local
+.env.staging
+.env.production
+
+# Uploaded user images (preserve directory structure via .gitkeep)
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/.htaccess
+
+# Operating system and editor artifacts
+.DS_Store
+Thumbs.db
+*.log
