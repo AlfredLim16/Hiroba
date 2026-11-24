@@ -2140,5 +2140,44 @@ label, .form-label {
   }
 }
 
+/* Sticky Footer & Ordered-Dither Hiroba Plaza Backdrop (Light & Dark Mode) */
+body.site-body {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
 
+main.site-main {
+  flex: 1 0 auto;
+}
 
+.site-footer {
+  margin-top: auto;
+}
+
+body.site-body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url('../images/plaza-bg-light.jpg');
+  background-position: bottom center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0.24;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.25) 35%, rgba(0, 0, 0, 1) 75%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.25) 35%, rgba(0, 0, 0, 1) 75%);
+  transition: opacity 240ms ease;
+}
+
+[data-theme="dark"] body.site-body::before {
+  background-image: url('../images/plaza-bg-dark.jpg');
+  opacity: 0.62;
+  filter: brightness(1.18) contrast(1.06);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.45) 28%, rgba(0, 0, 0, 1) 65%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.45) 28%, rgba(0, 0, 0, 1) 65%);
+}

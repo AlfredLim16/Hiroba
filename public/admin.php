@@ -15,7 +15,7 @@ $currentUser = currentUser();
 $adminId = (int)$currentUser['id'];
 
 $activeTab = trim((string)($_GET['tab'] ?? 'vetting'));
-if (!in_array($activeTab, ['vetting', 'reports', 'unlock', 'analytics', 'audit'], true)) {
+if (!in_array($activeTab, ['vetting', 'reports', 'categories', 'unlock', 'analytics', 'audit'], true)) {
   $activeTab = 'vetting';
 }
 
@@ -226,6 +226,174 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       setFlash('success', 'Student password has been reset successfully.');
       redirect('admin.php?tab=unlock');
     }
+
+    // Action G: Create New Service Category
+    elseif ($action === 'create_category') {
+      $catName = trim((string)($_POST['category_name'] ?? ''));
+      $catDesc = trim((string)($_POST['category_description'] ?? ''));
+
+      if (mb_strlen($catName) < 2 || mb_strlen($catName) > 50) {
+        setFlash('danger', 'Category name must be between 2 and 50 characters.');
+        redirect('admin.php?tab=categories');
+      }
+      if (mb_strlen($catDesc) > 255) {
+        setFlash('danger', 'Category description cannot exceed 255 characters.');
+        redirect('admin.php?tab=categories');
+      }
+
+      $catResult = null;
+      dbTransaction(function (PDO $db) use ($catName, $catDesc, $adminId, &$catResult) {
+        $catResult = findOrCreateCategory($db, $catName, $catDesc, $adminId);
+      });
+
+      if ($catResult && $catResult['created']) {
+        setFlash('success', 'Category "' . $catResult['name'] . '" added for new services.');
+      } elseif ($catResult && !empty($catResult['reactivated'])) {
+        setFlash('success', 'Category "' . $catResult['name'] . '" was previously hidden and is now active again.');
+      } else {
+        setFlash('warn', 'Category "' . ($catResult['name'] ?? $catName) . '" already exists.');
+      }
+      redirect('admin.php?tab=categories');
+    }
+
+    // Action H: Edit Existing Service Category
+    elseif ($action === 'edit_category') {
+      $catId = max(0, (int)($_POST['category_id'] ?? 0));
+      $catName = trim((string)($_POST['category_name'] ?? ''));
+      $catDesc = trim((string)($_POST['category_description'] ?? ''));
+
+      if ($catId === 0) {
+        setFlash('danger', 'Invalid category selected.');
+        redirect('admin.php?tab=categories');
+      }
+      if (mb_strlen($catName) < 2 || mb_strlen($catName) > 50) {
+        setFlash('danger', 'Category name must be between 2 and 50 characters.');
+        redirect('admin.php?tab=categories');
+      }
+      if (mb_strlen($catDesc) > 255) {
+        setFlash('danger', 'Category description cannot exceed 255 characters.');
+        redirect('admin.php?tab=categories');
+      }
+
+      $dupStmt = $pdo->prepare('SELECT id FROM categories WHERE LOWER(name) = LOWER(:name) AND id != :id LIMIT 1');
+      $dupStmt->execute([':name' => $catName, ':id' => $catId]);
+      if ($dupStmt->fetch()) {
+        setFlash('danger', 'Another category already uses the name "' . $catName . '".');
+        redirect('admin.php?tab=categories');
+      }
+
+      dbTransaction(function (PDO $db) use ($catId, $catName, $catDesc, $adminId) {
+        $newSlug = generateUniqueCategorySlug($db, $catName, $catId);
+        $upd = $db->prepare('
+          UPDATE categories
+          SET name = :name, slug = :slug, description = :description
+          WHERE id = :id
+        ');
+        $upd->execute([
+          ':name' => $catName,
+          ':slug' => $newSlug,
+          ':description' => $catDesc !== '' ? $catDesc : null,
+          ':id' => $catId,
+        ]);
+
+        $audit = $db->prepare('
+          INSERT INTO audit_logs (entity_type, entity_id, actor_id, action, details, ip_address)
+          VALUES (:entity_type, :entity_id, :actor_id, :action, :details, :ip)
+        ');
+        $audit->execute([
+          ':entity_type' => 'categories',
+          ':entity_id' => $catId,
+          ':actor_id' => $adminId,
+          ':action' => 'category_updated',
+          ':details' => json_encode(['name' => $catName, 'slug' => $newSlug]),
+          ':ip' => getClientIp(),
+        ]);
+      });
+
+      setFlash('success', 'Category updated successfully.');
+      redirect('admin.php?tab=categories');
+    }
+
+    // Action I: Hide or Unhide Service Category
+    elseif ($action === 'toggle_category_status') {
+      $catId = max(0, (int)($_POST['category_id'] ?? 0));
+      $curStmt = $pdo->prepare('SELECT id, name, status FROM categories WHERE id = :id LIMIT 1');
+      $curStmt->execute([':id' => $catId]);
+      $catRow = $curStmt->fetch();
+
+      if (!$catRow) {
+        setFlash('danger', 'Category not found.');
+        redirect('admin.php?tab=categories');
+      }
+
+      $nextStatus = ($catRow['status'] === 'hidden') ? 'active' : 'hidden';
+      $auditAction = ($nextStatus === 'hidden') ? 'category_hidden' : 'category_unhidden';
+
+      dbTransaction(function (PDO $db) use ($catId, $catRow, $nextStatus, $auditAction, $adminId) {
+        $upd = $db->prepare('UPDATE categories SET status = :status WHERE id = :id');
+        $upd->execute([':status' => $nextStatus, ':id' => $catId]);
+
+        $audit = $db->prepare('
+          INSERT INTO audit_logs (entity_type, entity_id, actor_id, action, details, ip_address)
+          VALUES (:entity_type, :entity_id, :actor_id, :action, :details, :ip)
+        ');
+        $audit->execute([
+          ':entity_type' => 'categories',
+          ':entity_id' => $catId,
+          ':actor_id' => $adminId,
+          ':action' => $auditAction,
+          ':details' => json_encode(['name' => $catRow['name'], 'status' => $nextStatus]),
+          ':ip' => getClientIp(),
+        ]);
+      });
+
+      $verb = ($nextStatus === 'hidden') ? 'hidden from the Plaza and new service forms.' : 'restored and visible again.';
+      setFlash('success', 'Category "' . $catRow['name'] . '" ' . $verb);
+      redirect('admin.php?tab=categories');
+    }
+
+    // Action J: Delete Service Category (blocked if services still reference it)
+    elseif ($action === 'delete_category') {
+      $catId = max(0, (int)($_POST['category_id'] ?? 0));
+      $curStmt = $pdo->prepare('SELECT id, name FROM categories WHERE id = :id LIMIT 1');
+      $curStmt->execute([':id' => $catId]);
+      $catRow = $curStmt->fetch();
+
+      if (!$catRow) {
+        setFlash('danger', 'Category not found.');
+        redirect('admin.php?tab=categories');
+      }
+
+      $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM services WHERE category_id = :id');
+      $cntStmt->execute([':id' => $catId]);
+      $linkedCount = (int)$cntStmt->fetchColumn();
+
+      if ($linkedCount > 0) {
+        setFlash('danger', 'Cannot delete "' . $catRow['name'] . '" because ' . $linkedCount . ' service(s) use it. Hide the category instead or reassign those services first.');
+        redirect('admin.php?tab=categories');
+      }
+
+      dbTransaction(function (PDO $db) use ($catId, $catRow, $adminId) {
+        $del = $db->prepare('DELETE FROM categories WHERE id = :id');
+        $del->execute([':id' => $catId]);
+
+        $audit = $db->prepare('
+          INSERT INTO audit_logs (entity_type, entity_id, actor_id, action, details, ip_address)
+          VALUES (:entity_type, :entity_id, :actor_id, :action, :details, :ip)
+        ');
+        $audit->execute([
+          ':entity_type' => 'categories',
+          ':entity_id' => $catId,
+          ':actor_id' => $adminId,
+          ':action' => 'category_deleted',
+          ':details' => json_encode(['name' => $catRow['name']]),
+          ':ip' => getClientIp(),
+        ]);
+      });
+
+      setFlash('success', 'Category "' . $catRow['name'] . '" deleted permanently.');
+      redirect('admin.php?tab=categories');
+    }
   } catch (PDOException $e) {
     setFlash('danger', 'Admin operation error: ' . $e->getMessage());
     redirect('admin.php?tab=' . $activeTab);
@@ -264,6 +432,19 @@ if ($activeTab === 'reports') {
     ORDER BY r.created_at ASC
   ');
   $pendingReports = $reportsStmt->fetchAll();
+}
+
+// Categories Management
+$allCategories = [];
+if ($activeTab === 'categories') {
+  $catListStmt = $pdo->query('
+    SELECT c.id, c.name, c.slug, c.description, c.status, c.created_at, COUNT(s.id) AS service_count
+    FROM categories c
+    LEFT JOIN services s ON c.id = s.category_id
+    GROUP BY c.id, c.name, c.slug, c.description, c.status, c.created_at
+    ORDER BY c.name ASC
+  ');
+  $allCategories = $catListStmt->fetchAll();
 }
 
 // Locked Accounts Queue
@@ -361,6 +542,9 @@ renderHeader('Admin Desk — Hiroba', [
     </a>
     <a href="<?= e(url('admin.php?tab=reports')) ?>" class="nav-tab-pill <?= $activeTab === 'reports' ? 'active' : '' ?>">
       Community Reports
+    </a>
+    <a href="<?= e(url('admin.php?tab=categories')) ?>" class="nav-tab-pill <?= $activeTab === 'categories' ? 'active' : '' ?>">
+      Categories
     </a>
     <a href="<?= e(url('admin.php?tab=unlock')) ?>" class="nav-tab-pill <?= $activeTab === 'unlock' ? 'active' : '' ?>">
       Account Recovery & Unlock
@@ -520,6 +704,110 @@ renderHeader('Admin Desk — Hiroba', [
           </table>
         </div>
       <?php endif; ?>
+    </section>
+
+  <!-- TAB 2B: Service Categories Management -->
+  <?php elseif ($activeTab === 'categories'): ?>
+    <section>
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="h3 mb-0">Service Categories</h2>
+        <span class="badge bg-secondary-subtle text-muted font-monospace"><?= count($allCategories) ?> Categories</span>
+      </div>
+
+      <div class="card p-4 shadow-sm mb-4" style="background-color: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);">
+        <h3 class="h4 mb-2">Add New Category</h3>
+        <p class="small text-muted mb-3">Create a new category so verified student sellers can list services under it.</p>
+        <form action="<?= e(url('admin.php?tab=categories')) ?>" method="POST" class="row g-3 align-items-end">
+          <?= csrfField() ?>
+          <input type="hidden" name="admin_action" value="create_category">
+          <div class="col-md-4">
+            <label for="admin-cat-name" class="form-label">Category Name</label>
+            <input type="text" name="category_name" id="admin-cat-name" class="form-control" placeholder="e.g., Data Analysis & Spreadsheets" minlength="2" maxlength="50" required>
+          </div>
+          <div class="col-md-6">
+            <label for="admin-cat-desc" class="form-label">Description (Optional)</label>
+            <input type="text" name="category_description" id="admin-cat-desc" class="form-control" placeholder="Brief summary of services in this category" maxlength="255">
+          </div>
+          <div class="col-md-2 d-grid">
+            <button type="submit" class="btn-tactile btn-accent justify-content-center">Add Category</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table align-middle" style="border: 1px solid var(--line);">
+          <thead style="background-color: var(--surface); font-size: 0.82rem; color: var(--ink-2);">
+            <tr>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Description</th>
+              <th class="text-end">Services</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($allCategories as $cat): ?>
+              <?php
+                $isHidden = (($cat['status'] ?? 'active') === 'hidden');
+                $svcCount = (int)$cat['service_count'];
+              ?>
+              <tr>
+                <td>
+                  <strong><?= e($cat['name']) ?></strong>
+                  <div class="font-monospace small text-muted"><?= e($cat['slug']) ?></div>
+                </td>
+                <td>
+                  <span class="badge <?= $isHidden ? 'bg-secondary-subtle text-muted' : 'bg-success-subtle text-success' ?> font-monospace">
+                    <?= $isHidden ? 'Hidden' : 'Active' ?>
+                  </span>
+                </td>
+                <td class="small text-muted" style="max-width: 280px;"><?= e((string)($cat['description'] ?? '—')) ?></td>
+                <td class="text-end font-monospace fw-bold"><?= $svcCount ?></td>
+                <td class="text-end" style="min-width: 240px;">
+                  <div class="d-inline-flex flex-wrap justify-content-end gap-1 align-items-center">
+                    <form action="<?= e(url('admin.php?tab=categories')) ?>" method="POST" class="d-inline">
+                      <?= csrfField() ?>
+                      <input type="hidden" name="admin_action" value="toggle_category_status">
+                      <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
+                      <button type="submit" class="btn-tactile btn-outline btn-sm">
+                        <?= $isHidden ? 'Show' : 'Hide' ?>
+                      </button>
+                    </form>
+
+                    <form action="<?= e(url('admin.php?tab=categories')) ?>" method="POST" class="d-inline">
+                      <?= csrfField() ?>
+                      <input type="hidden" name="admin_action" value="delete_category">
+                      <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
+                      <button
+                        type="submit"
+                        class="btn-tactile btn-outline btn-sm text-danger"
+                        <?= $svcCount > 0 ? 'disabled title="Reassign or remove services in this category before deleting"' : '' ?>
+                        onclick="return confirm('Permanently delete this category?');"
+                      >Delete</button>
+                    </form>
+                  </div>
+
+                  <details class="mt-2 text-start">
+                    <summary class="small text-muted" style="cursor: pointer;">Edit details</summary>
+                    <form action="<?= e(url('admin.php?tab=categories')) ?>" method="POST" class="mt-2 p-2 rounded border" style="background-color: var(--ground); border-color: var(--line) !important;">
+                      <?= csrfField() ?>
+                      <input type="hidden" name="admin_action" value="edit_category">
+                      <input type="hidden" name="category_id" value="<?= (int)$cat['id'] ?>">
+                      <div class="mb-2">
+                        <input type="text" name="category_name" class="form-control form-control-sm" value="<?= e($cat['name']) ?>" minlength="2" maxlength="50" required>
+                      </div>
+                      <div class="mb-2">
+                        <input type="text" name="category_description" class="form-control form-control-sm" value="<?= e((string)($cat['description'] ?? '')) ?>" placeholder="Description (optional)" maxlength="255">
+                      </div>
+                      <button type="submit" class="btn-tactile btn-accent btn-sm">Save</button>
+                    </form>
+                  </details>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
     </section>
 
   <!-- TAB 3: Account Recovery & Lockout Reset -->

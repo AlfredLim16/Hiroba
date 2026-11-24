@@ -59,10 +59,12 @@ CREATE TABLE categories (
   name VARCHAR(50) NOT NULL,
   slug VARCHAR(50) NOT NULL,
   description VARCHAR(255) NULL,
+  status ENUM('active', 'hidden') NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_categories_name (name),
-  UNIQUE KEY uq_categories_slug (slug)
+  UNIQUE KEY uq_categories_slug (slug),
+  KEY idx_categories_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE services (
@@ -244,7 +246,7 @@ JOIN categories c ON s.category_id = c.id
 JOIN users u ON s.seller_id = u.id
 JOIN seller_profiles sp ON u.id = sp.user_id
 LEFT JOIN service_images img ON s.id = img.service_id AND img.is_primary = 1
-WHERE s.status = 'active' AND sp.status = 'approved';
+WHERE s.status = 'active' AND sp.status = 'approved' AND c.status = 'active';
 
 CREATE OR REPLACE VIEW vw_order_details AS
 SELECT 

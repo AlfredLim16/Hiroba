@@ -15,6 +15,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // 4. Smooth Horizontal Scrolling for Categories and Filter Tabs
   initHorizontalScroll();
+
+  // 5. Inline New Category Toggle on Service Forms
+  initNewCategoryToggle();
+
+  // 6. Blur focused descendants before Bootstrap applies aria-hidden on modals
+  initModalFocusFix();
 });
 
 // Reads the current theme and sets up all theme toggle buttons
@@ -148,5 +154,41 @@ function initHorizontalScroll() {
       const walk = (x - startX) * 1.5;
       row.scrollLeft = scrollLeft - walk;
     });
+  });
+}
+
+// Reveals inline new-category inputs when '+ Add new category...' is selected
+function initNewCategoryToggle() {
+  const select = document.getElementById('service-category');
+  const fields = document.getElementById('new-category-fields');
+  if (!select || !fields) {
+    return;
+  }
+
+  const nameInput = fields.querySelector('input[name="new_category_name"]');
+  const syncVisibility = function () {
+    const isNew = select.value === '__new__';
+    fields.classList.toggle('d-none', !isNew);
+    if (nameInput) {
+      nameInput.required = isNew;
+    }
+  };
+
+  syncVisibility();
+  select.addEventListener('change', function () {
+    syncVisibility();
+    if (select.value === '__new__' && nameInput) {
+      nameInput.focus();
+    }
+  });
+}
+
+// Prevents browser warning: "Blocked aria-hidden on an element because its descendant retained focus"
+function initModalFocusFix() {
+  document.addEventListener('hide.bs.modal', function (event) {
+    const active = document.activeElement;
+    if (active && event.target && event.target.contains(active) && typeof active.blur === 'function') {
+      active.blur();
+    }
   });
 }

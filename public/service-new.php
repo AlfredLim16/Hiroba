@@ -16,12 +16,15 @@ $currentUser = currentUser();
 $userId = (int)$currentUser['id'];
 
 // Fetch categories for dropdown
-$categoriesStmt = $pdo->query('SELECT id, name FROM categories ORDER BY name ASC');
+$categoriesStmt = $pdo->query('SELECT id, name FROM categories WHERE status = \'active\' ORDER BY name ASC');
 $categories = $categoriesStmt->fetchAll();
 
 $errors = [];
 $title = '';
 $categoryId = 0;
+$isNewCategory = false;
+$newCategoryName = '';
+$newCategoryDescription = '';
 $price = '';
 $deliveryDays = 3;
 $description = '';
@@ -33,7 +36,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors['general'] = 'Security validation failed (CSRF). Please refresh and try again.';
   } else {
     $title = trim((string)($_POST['title'] ?? ''));
-    $categoryId = max(0, (int)($_POST['category_id'] ?? 0));
+    $rawCategory = trim((string)($_POST['category_id'] ?? '0'));
+    $isNewCategory = ($rawCategory === '__new__');
+    $categoryId = $isNewCategory ? 0 : max(0, (int)$rawCategory);
+    $newCategoryName = trim((string)($_POST['new_category_name'] ?? ''));
+    $newCategoryDescription = trim((string)($_POST['new_category_description'] ?? ''));
     $price = (float)($_POST['price'] ?? 0);
     $deliveryDays = (int)($_POST['delivery_days'] ?? 3);
     $description = trim((string)($_POST['description'] ?? ''));
@@ -46,7 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $errors['title'] = 'Title cannot exceed 80 characters.';
     }
 
-    if ($categoryId === 0) {
+    if ($isNewCategory) {
+      if ($newCategoryName === '') {
+        $errors['new_category_name'] = 'Please enter a name for the new category.';
+      } elseif (mb_strlen($newCategoryName) < 2 || mb_strlen($newCategoryName) > 50) {
+        $errors['new_category_name'] = 'Category name must be between 2 and 50 characters.';
+      }
+      if (mb_strlen($newCategoryDescription) > 255) {
+        $errors['new_category_description'] = 'Category description cannot exceed 255 characters.';
+      }
+    } elseif ($categoryId === 0) {
       $errors['category_id'] = 'Please select a valid academic category.';
     }
 
@@ -79,7 +95,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
       try {
         $newServiceId = 0;
-        dbTransaction(function (PDO $db) use ($userId, $categoryId, $title, $description, $price, $deliveryDays, $requirements, $uploadedImagePath, &$newServiceId) {
+        dbTransaction(function (PDO $db) use ($userId, $categoryId, $isNewCategory, $newCategoryName, $newCategoryDescription, $title, $description, $price, $deliveryDays, $requirements, $uploadedImagePath, &$newServiceId) {
+          $resolvedCategoryId = $categoryId;
+          if ($isNewCategory) {
+            $catResult = findOrCreateCategory($db, $newCategoryName, $newCategoryDescription, $userId);
+            $resolvedCategoryId = $catResult['id'];
+          }
+
           // Generate unique slug
           $baseSlug = slugify($title);
           $slug = $baseSlug;
@@ -100,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ');
           $stmt->execute([
             ':seller_id' => $userId,
-            ':category_id' => $categoryId,
+            ':category_id' => $resolvedCategoryId,
             ':title' => $title,
             ':slug' => $slug,
             ':description' => $description,
@@ -196,10 +218,11 @@ renderHeader('Offer a Service — Hiroba', ['current_page' => 'plaza']);
               <select name="category_id" id="service-category" class="form-select <?= !empty($errors['category_id']) ? 'is-invalid' : '' ?>" required>
                 <option value="0">-- Select Category --</option>
                 <?php foreach ($categories as $cat): ?>
-                  <option value="<?= (int)$cat['id'] ?>" <?= $categoryId === (int)$cat['id'] ? 'selected' : '' ?>>
+                  <option value="<?= (int)$cat['id'] ?>" <?= !$isNewCategory && $categoryId === (int)$cat['id'] ? 'selected' : '' ?>>
                     <?= e($cat['name']) ?>
                   </option>
                 <?php endforeach; ?>
+                <option value="__new__" <?= $isNewCategory ? 'selected' : '' ?>>+ Add new category...</option>
               </select>
               <?php if (!empty($errors['category_id'])): ?>
                 <div class="invalid-feedback"><?= e($errors['category_id']) ?></div>
@@ -240,6 +263,41 @@ renderHeader('Offer a Service — Hiroba', ['current_page' => 'plaza']);
               <?php if (!empty($errors['delivery_days'])): ?>
                 <div class="invalid-feedback"><?= e($errors['delivery_days']) ?></div>
               <?php endif; ?>
+            </div>
+          </div>
+
+          <div id="new-category-fields" class="p-3 mb-3 rounded border <?= $isNewCategory ? '' : 'd-none' ?>" style="background-color: var(--ground); border-color: var(--line) !important;">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="new-category-name" class="form-label">New Category Name</label>
+                <input
+                  type="text"
+                  name="new_category_name"
+                  id="new-category-name"
+                  class="form-control <?= !empty($errors['new_category_name']) ? 'is-invalid' : '' ?>"
+                  placeholder="e.g., Data Analysis & Spreadsheets"
+                  value="<?= e($newCategoryName) ?>"
+                  maxlength="50"
+                >
+                <?php if (!empty($errors['new_category_name'])): ?>
+                  <div class="invalid-feedback"><?= e($errors['new_category_name']) ?></div>
+                <?php endif; ?>
+              </div>
+              <div class="col-md-6">
+                <label for="new-category-desc" class="form-label">Category Description (Optional)</label>
+                <input
+                  type="text"
+                  name="new_category_description"
+                  id="new-category-desc"
+                  class="form-control <?= !empty($errors['new_category_description']) ? 'is-invalid' : '' ?>"
+                  placeholder="Briefly describe services under this category"
+                  value="<?= e($newCategoryDescription) ?>"
+                  maxlength="255"
+                >
+                <?php if (!empty($errors['new_category_description'])): ?>
+                  <div class="invalid-feedback"><?= e($errors['new_category_description']) ?></div>
+                <?php endif; ?>
+              </div>
             </div>
           </div>
 

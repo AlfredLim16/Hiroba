@@ -110,6 +110,9 @@ function isAdmin(): bool {
  * Check whether authenticated user possesses an approved seller profile.
  */
 function isVerifiedSeller(): bool {
+    if (isAdmin()) {
+        return false;
+    }
     $profile = getSellerProfile();
     return $profile !== null && (string)$profile['status'] === 'approved';
 }
@@ -179,6 +182,10 @@ function requireAdmin(): void {
  */
 function requireSeller(): void {
     requireLogin();
+    if (isAdmin()) {
+        setFlash('warning', 'Administrator accounts cannot act as sellers. Please create a separate student account to offer services.');
+        redirect('admin.php');
+    }
     if (!isVerifiedSeller()) {
         setFlash('warning', 'You must be a verified student seller to access that feature. Please submit your application in Settings.');
         redirect('settings.php');

@@ -54,6 +54,7 @@ SELECT
   COUNT(s.id) AS active_services_count
 FROM categories c
 LEFT JOIN services s ON c.id = s.category_id AND s.status = 'active'
+WHERE c.status = 'active'
 GROUP BY c.id, c.name, c.slug
 ORDER BY c.name ASC;
 

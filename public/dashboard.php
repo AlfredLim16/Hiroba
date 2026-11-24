@@ -7,8 +7,11 @@ require_once __DIR__ . '/../src/functions.php';
 require_once __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/layout.php';
 
-// Authentication required
+// Authentication required (student workspace only; admins use Admin Desk)
 requireLogin();
+if (isAdmin()) {
+  redirect('admin.php');
+}
 
 $pdo = getDbConnection();
 $currentUser = currentUser();
@@ -119,7 +122,12 @@ renderHeader('Dashboard — Hiroba', ['current_page' => 'dashboard']);
       <p class="body-text small text-muted mb-0">Track and manage your campus orders, client requests, and academic collaborations.</p>
     </div>
     <div class="d-flex align-items-center gap-2">
-      <?php if ($isSeller): ?>
+      <?php if (isAdmin()): ?>
+        <a href="<?= e(url('admin.php')) ?>" class="btn-tactile btn-outline">
+          <?= renderIcon('shield', 'icon') ?>
+          <span>Admin Desk</span>
+        </a>
+      <?php elseif ($isSeller): ?>
         <a href="<?= e(url('service-new.php')) ?>" class="btn-tactile btn-accent">
           <?= renderIcon('plus', 'icon') ?>
           <span>New Service</span>

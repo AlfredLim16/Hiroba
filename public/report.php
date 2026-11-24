@@ -7,8 +7,11 @@ require_once __DIR__ . '/../src/functions.php';
 require_once __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/layout.php';
 
-// Authentication required
+// Authentication required (student reporting only; admins review reports in Admin Desk)
 requireLogin();
+if (isAdmin()) {
+  redirect('admin.php?tab=reports');
+}
 
 $serviceId = max(0, (int)($_GET['service_id'] ?? ($_POST['service_id'] ?? 0)));
 if ($serviceId === 0) {

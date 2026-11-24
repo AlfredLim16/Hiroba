@@ -92,6 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $submittedToken = (string)($_POST['csrf_token'] ?? '');
   if (!verifyCsrfToken($submittedToken)) {
     $orderError = 'Security verification failed (CSRF). Please try again.';
+  } elseif (isAdmin()) {
+    $orderError = 'Administrator accounts cannot place service orders.';
   } elseif ($isOwner) {
     $orderError = 'You cannot purchase your own service listing.';
   } else {
@@ -255,47 +257,49 @@ renderHeader($service['title'] . ' — Hiroba', ['current_page' => 'plaza']);
             </div>
           <?php endif; ?>
 
-          <?php if ($isOwner): ?>
-            <!-- Owner Notice -->
-            <div class="alert alert-info d-flex align-items-center gap-2 mb-3" style="font-size: 0.85rem; background-color: var(--surface-raised); border-color: var(--line);">
-              <?= renderIcon('info', 'icon flex-shrink-0 text-accent') ?>
-              <div>This is your active service listing. You can update details or manage orders from your seller console.</div>
-            </div>
-            <a href="<?= e(url('service-edit.php?id=' . $serviceId)) ?>" class="btn-tactile btn-outline w-100 justify-content-center mb-2">
-              <?= renderIcon('settings', 'icon') ?>
-              <span>Edit Service Details</span>
-            </a>
-          <?php else: ?>
-            <!-- Order Placement Form -->
-            <form action="<?= e(url('service.php?id=' . $serviceId)) ?>" method="POST">
-              <?= csrfField() ?>
-
-              <div class="mb-3">
-                <label for="order-brief" class="form-label">Project Instructions & Brief</label>
-                <textarea 
-                  name="brief" 
-                  id="order-brief" 
-                  rows="4" 
-                  class="form-control" 
-                  placeholder="Describe your requirements, deadlines, and project details for the student freelancer..."
-                  required
-                ><?= e($briefInput) ?></textarea>
+          <?php if (!isAdmin()): ?>
+            <?php if ($isOwner): ?>
+              <!-- Owner Notice -->
+              <div class="alert alert-info d-flex align-items-center gap-2 mb-3" style="font-size: 0.85rem; background-color: var(--surface-raised); border-color: var(--line);">
+                <?= renderIcon('info', 'icon flex-shrink-0 text-accent') ?>
+                <div>This is your active service listing. You can update details or manage orders from your seller console.</div>
               </div>
+              <a href="<?= e(url('service-edit.php?id=' . $serviceId)) ?>" class="btn-tactile btn-outline w-100 justify-content-center mb-2">
+                <?= renderIcon('settings', 'icon') ?>
+                <span>Edit Service Details</span>
+              </a>
+            <?php else: ?>
+              <!-- Order Placement Form -->
+              <form action="<?= e(url('service.php?id=' . $serviceId)) ?>" method="POST">
+                <?= csrfField() ?>
 
-              <button type="submit" class="btn-tactile btn-accent w-100 justify-content-center mb-2">
-                <?= renderIcon('check', 'icon') ?>
-                <span>Order Now &bull; <?= e(formatPrice((float)$service['price'])) ?></span>
-              </button>
-            </form>
+                <div class="mb-3">
+                  <label for="order-brief" class="form-label">Project Instructions & Brief</label>
+                  <textarea 
+                    name="brief" 
+                    id="order-brief" 
+                    rows="4" 
+                    class="form-control" 
+                    placeholder="Describe your requirements, deadlines, and project details for the student freelancer..."
+                    required
+                  ><?= e($briefInput) ?></textarea>
+                </div>
+
+                <button type="submit" class="btn-tactile btn-accent w-100 justify-content-center mb-2">
+                  <?= renderIcon('check', 'icon') ?>
+                  <span>Order Now &bull; <?= e(formatPrice((float)$service['price'])) ?></span>
+                </button>
+              </form>
+            <?php endif; ?>
+
+            <!-- Community Safety & Reporting -->
+            <div class="mt-4 pt-3 border-top text-center">
+              <a href="<?= e(url('report.php?service_id=' . $serviceId)) ?>" class="text-muted small text-decoration-none d-inline-flex align-items-center gap-1">
+                <?= renderIcon('alert', 'icon--sm') ?>
+                <span>Report this service listing</span>
+              </a>
+            </div>
           <?php endif; ?>
-
-          <!-- Community Safety & Reporting -->
-          <div class="mt-4 pt-3 border-top text-center">
-            <a href="<?= e(url('report.php?service_id=' . $serviceId)) ?>" class="text-muted small text-decoration-none d-inline-flex align-items-center gap-1">
-              <?= renderIcon('alert', 'icon--sm') ?>
-              <span>Report this service listing</span>
-            </a>
-          </div>
         </div>
       </aside>
     </div>

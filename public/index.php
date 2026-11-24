@@ -25,6 +25,7 @@ $categoriesStmt = $pdo->query('
     COUNT(s.id) AS active_services_count
   FROM categories c
   LEFT JOIN services s ON c.id = s.category_id AND s.status = \'active\'
+  WHERE c.status = \'active\'
   GROUP BY c.id, c.name, c.slug
   ORDER BY c.name ASC
 ');
@@ -111,7 +112,12 @@ renderHeader('Plaza - Academic Student Marketplace', ['current_page' => 'plaza']
       </div>
       <div class="col-lg-4 text-lg-end">
         <?php if (isLoggedIn()): ?>
-          <?php if (isVerifiedSeller()): ?>
+          <?php if (isAdmin()): ?>
+            <a href="<?= e(url('admin.php')) ?>" class="btn-tactile btn-outline">
+              <?= renderIcon('shield', 'icon') ?>
+              <span>Admin Desk</span>
+            </a>
+          <?php elseif (isVerifiedSeller()): ?>
             <a href="<?= e(url('service-new.php')) ?>" class="btn-tactile btn-accent">
               <?= renderIcon('plus', 'icon') ?>
               <span>Offer a Service</span>

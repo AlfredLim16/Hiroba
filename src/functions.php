@@ -31,6 +31,14 @@ function ensureSessionStarted(): void {
 function generateCsrfToken(): string {
     ensureSessionStarted();
 
+    if (
+        !empty($_SESSION['csrf_token']) &&
+        !empty($_SESSION['csrf_token_time']) &&
+        (time() - (int)$_SESSION['csrf_token_time']) <= CSRF_EXPIRY
+    ) {
+        return (string)$_SESSION['csrf_token'];
+    }
+
     $token = bin2hex(random_bytes(32));
     $_SESSION['csrf_token'] = $token;
     $_SESSION['csrf_token_time'] = time();
@@ -245,4 +253,116 @@ function getClientIp(): string {
 function getUserAgent(): string {
     $rawAgent = (string)($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown Agent');
     return mb_substr(trim($rawAgent), 0, 250);
+}
+
+/**
+ * Generate a unique URL-safe category slug (max 50 chars).
+ */
+function generateUniqueCategorySlug(PDO $db, string $name, ?int $excludeId = null): string {
+    $baseSlug = substr(slugify($name), 0, 50);
+    if ($baseSlug === '') {
+        $baseSlug = 'cat-' . bin2hex(random_bytes(4));
+    }
+
+    $slug = $baseSlug;
+    $counter = 2;
+    while (true) {
+        if ($excludeId !== null) {
+            $chk = $db->prepare('SELECT id FROM categories WHERE slug = :slug AND id != :exclude_id LIMIT 1');
+            $chk->execute([':slug' => $slug, ':exclude_id' => $excludeId]);
+        } else {
+            $chk = $db->prepare('SELECT id FROM categories WHERE slug = :slug LIMIT 1');
+            $chk->execute([':slug' => $slug]);
+        }
+
+        if (!$chk->fetch()) {
+            return $slug;
+        }
+
+        $suffix = '-' . $counter;
+        $slug = substr($baseSlug, 0, 50 - strlen($suffix)) . $suffix;
+        $counter++;
+    }
+}
+
+/**
+ * Find an existing category by name (case-insensitive, reactivating if hidden)
+ * or create a new active category with a unique slug.
+ *
+ * @return array{id: int, name: string, created: bool, reactivated: bool}
+ */
+function findOrCreateCategory(PDO $db, string $name, ?string $description, int $actorId): array {
+    $cleanName = trim($name);
+    $cleanDesc = $description !== null ? trim($description) : null;
+    if ($cleanDesc === '') {
+        $cleanDesc = null;
+    }
+
+    $existing = $db->prepare('SELECT id, name, status FROM categories WHERE LOWER(name) = LOWER(:name) LIMIT 1');
+    $existing->execute([':name' => $cleanName]);
+    $row = $existing->fetch();
+
+    if ($row) {
+        $catId = (int)$row['id'];
+        $reactivated = false;
+        if (($row['status'] ?? 'active') === 'hidden') {
+            $upd = $db->prepare('UPDATE categories SET status = :status WHERE id = :id');
+            $upd->execute([':status' => 'active', ':id' => $catId]);
+            $reactivated = true;
+
+            $audit = $db->prepare('
+                INSERT INTO audit_logs (entity_type, entity_id, actor_id, action, details, ip_address)
+                VALUES (:entity_type, :entity_id, :actor_id, :action, :details, :ip)
+            ');
+            $audit->execute([
+                ':entity_type' => 'categories',
+                ':entity_id' => $catId,
+                ':actor_id' => $actorId,
+                ':action' => 'category_unhidden',
+                ':details' => json_encode(['name' => (string)$row['name']]),
+                ':ip' => getClientIp(),
+            ]);
+        }
+
+        return [
+            'id' => $catId,
+            'name' => (string)$row['name'],
+            'created' => false,
+            'reactivated' => $reactivated,
+        ];
+    }
+
+    $slug = generateUniqueCategorySlug($db, $cleanName);
+
+    $ins = $db->prepare('
+        INSERT INTO categories (name, slug, description, status, created_at)
+        VALUES (:name, :slug, :description, :status, NOW())
+    ');
+    $ins->execute([
+        ':name' => $cleanName,
+        ':slug' => $slug,
+        ':description' => $cleanDesc,
+        ':status' => 'active',
+    ]);
+    $newId = (int)$db->lastInsertId();
+
+    $audit = $db->prepare('
+        INSERT INTO audit_logs (entity_type, entity_id, actor_id, action, details, ip_address)
+        VALUES (:entity_type, :entity_id, :actor_id, :action, :details, :ip)
+    ');
+    $audit->execute([
+        ':entity_type' => 'categories',
+        ':entity_id' => $newId,
+        ':actor_id' => $actorId,
+        ':action' => 'category_created',
+        ':details' => json_encode(['name' => $cleanName, 'slug' => $slug]),
+        ':ip' => getClientIp(),
+    ]);
+
+    return [
+        'id' => $newId,
+        'name' => $cleanName,
+        'created' => true,
+        'reactivated' => false,
+    ];
 }

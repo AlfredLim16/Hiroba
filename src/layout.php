@@ -20,7 +20,8 @@ require_once __DIR__ . '/functions.php';
 function renderHeader(string $pageTitle = '', array $options = []): void {
     initSession();
 
-    $siteTitle = $pageTitle !== '' ? e($pageTitle) . ' — ' . e(APP_NAME) : e(APP_NAME) . ' — Student Services Plaza';
+    $cleanPageTitle = trim((string)preg_replace('/\s*[—–-]+\s*' . preg_quote(APP_NAME, '/') . '\s*$/iu', '', $pageTitle));
+    $siteTitle = $cleanPageTitle !== '' ? e($cleanPageTitle) . ' — ' . e(APP_NAME) : e(APP_NAME) . ' — Student Services Plaza';
     $activeTheme = ($_COOKIE['hiroba_theme'] ?? 'light') === 'dark' ? 'dark' : 'light';
     $currentUser = getCurrentUser();
     $loggedIn = $currentUser !== null;
@@ -85,11 +86,13 @@ function renderHeader(string $pageTitle = '', array $options = []): void {
               </a>
             </li>
             <?php if ($loggedIn): ?>
+            <?php if (!$admin): ?>
             <li class="nav-item">
               <a class="nav-link <?= $activeNav === 'dashboard' ? 'active' : '' ?>" href="<?= e(url('dashboard.php')) ?>">
                 Dashboard
               </a>
             </li>
+            <?php endif; ?>
             <?php if ($isSeller): ?>
             <li class="nav-item">
               <a class="nav-link <?= $activeNav === 'post_service' ? 'active' : '' ?>" href="<?= e(url('service-new.php')) ?>">
@@ -127,12 +130,14 @@ function renderHeader(string $pageTitle = '', array $options = []): void {
               <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="userMenuBtn">
                 <li><h6 class="dropdown-header"><?= e($currentUser['email']) ?></h6></li>
                 <li><hr class="dropdown-divider"></li>
+                <?php if (!$admin): ?>
                 <li>
                   <a class="dropdown-item d-flex align-items-center gap-2" href="<?= e(url('dashboard.php')) ?>">
                     <?= renderIcon('dashboard', 'icon--sm') ?>
                     My Orders
                   </a>
                 </li>
+                <?php endif; ?>
                 <li>
                   <a class="dropdown-item d-flex align-items-center gap-2" href="<?= e(url('settings.php')) ?>">
                     <?= renderIcon('settings', 'icon--sm') ?>
@@ -141,7 +146,7 @@ function renderHeader(string $pageTitle = '', array $options = []): void {
                 </li>
                 <?php if (!$isSeller && !$admin): ?>
                 <li>
-                  <a class="dropdown-item d-flex align-items-center gap-2 text-accent" href="<?= e(url('settings.php#become-seller')) ?>">
+                  <a class="dropdown-item d-flex align-items-center gap-2 text-accent" href="<?= e(url('settings.php#seller-application')) ?>">
                     <?= renderIcon('badge', 'icon--sm') ?>
                     Become a Seller
                   </a>

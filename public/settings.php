@@ -85,6 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   // Form 2: Apply to Become a Seller / Update Seller Bio
   elseif ($formType === 'apply_seller') {
+    if (isAdmin()) {
+      setFlash('danger', 'Administrator accounts cannot apply to become sellers. Please register a separate student account to offer services.');
+      redirect('settings.php');
+    }
     $studentId = trim((string)($_POST['student_id'] ?? ''));
     $bio = trim((string)($_POST['bio'] ?? ''));
 
@@ -227,6 +231,7 @@ renderHeader('Account Settings — Hiroba', ['current_page' => 'settings']);
       </div>
 
       <!-- Section 2: Seller Accreditation Application -->
+      <?php if (!isAdmin()): ?>
       <div class="card p-4 shadow-sm" id="seller-application" style="background-color: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <div>
@@ -322,6 +327,7 @@ renderHeader('Account Settings — Hiroba', ['current_page' => 'settings']);
           </div>
         </form>
       </div>
+      <?php endif; ?>
     </div>
   </div>
 </div>
